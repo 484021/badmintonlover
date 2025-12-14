@@ -27,16 +27,10 @@ export function AuthButton() {
 
   if (!user) {
     return (
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={signInWithGithub}>
-          <Github className="mr-2 h-4 w-4" />
-          Sign in with GitHub
-        </Button>
-        <Button variant="default" size="sm" onClick={signInWithGoogle}>
-          <Mail className="mr-2 h-4 w-4" />
-          Sign in with Google
-        </Button>
-      </div>
+      <Button variant="outline" size="sm" onClick={signInWithGithub}>
+        <Github className="mr-2 h-4 w-4" />
+        Sign in with GitHub
+      </Button>
     )
   }
 
