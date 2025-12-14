@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Search, Menu } from "lucide-react"
+import { AuthButton } from "@/components/auth-button"
 
 export function SiteNavigation() {
   const pathname = usePathname()
@@ -14,7 +15,7 @@ export function SiteNavigation() {
     { name: "Drills", href: "/category/drills" },
     { name: "Equipment", href: "/category/equipment" },
     { name: "Fitness", href: "/category/fitness" },
-    { name: "Organizing", href: "/category/organizing" },
+    { name: "Forum", href: "/forum" },
   ]
 
   return (
@@ -79,12 +80,7 @@ export function SiteNavigation() {
               <button className="text-muted-foreground hover:text-foreground transition-colors">
                 <Search className="h-5 w-5" />
               </button>
-              <Link
-                href="/newsletter"
-                className="hidden sm:block rounded-sm bg-primary px-4 py-2 text-xs font-bold uppercase tracking-wide text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                Subscribe
-              </Link>
+              <AuthButton />
               <button className="lg:hidden text-muted-foreground hover:text-foreground transition-colors">
                 <Menu className="h-6 w-6" />
               </button>

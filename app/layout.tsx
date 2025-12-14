@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { SiteNavigation } from "@/components/site-navigation"
 import { SiteFooter } from "@/components/site-footer"
+import { AuthProvider } from "@/components/auth-provider"
 import Script from "next/script"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -111,9 +112,11 @@ export default function RootLayout({
         <meta name="google-site-verification" content="YOUR_VERIFICATION_CODE" />
       </head>
       <body className={`font-sans antialiased`}>
-        <SiteNavigation />
-        {children}
-        <SiteFooter />
+        <AuthProvider>
+          <SiteNavigation />
+          {children}
+          <SiteFooter />
+        </AuthProvider>
         <Analytics />
       </body>
     </html>
