@@ -1,206 +1,24 @@
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Users table (extends Supabase auth.users)
-CREATE TABLE profiles (
-  id UUID REFERENCES auth.users(id) PRIMARY KEY,
-  username TEXT UNIQUE NOT NULL,
-  avatar_url TEXT,
-  bio TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  post_count INTEGER DEFAULT 0,
-  thread_count INTEGER DEFAULT 0
+-- Create subscribers table
+CREATE TABLE IF NOT EXISTS subscribers (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Forum categories
-CREATE TABLE categories (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  name TEXT NOT NULL,
-  slug TEXT UNIQUE NOT NULL,
-  description TEXT,
-  icon TEXT,
-  color TEXT,
-  display_order INTEGER DEFAULT 0,
-  thread_count INTEGER DEFAULT 0,
-  post_count INTEGER DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
+-- Create index for faster email lookups
+CREATE INDEX IF NOT EXISTS idx_subscribers_email ON subscribers(email);
 
--- Forum threads
-CREATE TABLE threads (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  category_id UUID REFERENCES categories(id) ON DELETE CASCADE NOT NULL,
-  author_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
-  title TEXT NOT NULL,
-  slug TEXT NOT NULL,
-  content TEXT NOT NULL,
-  is_pinned BOOLEAN DEFAULT FALSE,
-  is_locked BOOLEAN DEFAULT FALSE,
-  view_count INTEGER DEFAULT 0,
-  reply_count INTEGER DEFAULT 0,
-  last_activity_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  UNIQUE(category_id, slug)
-);
+-- Enable Row Level Security
+ALTER TABLE subscribers ENABLE ROW LEVEL SECURITY;
 
--- Forum posts (replies)
-CREATE TABLE posts (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  thread_id UUID REFERENCES threads(id) ON DELETE CASCADE NOT NULL,
-  author_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
-  content TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
+-- Create policy to allow inserts (for sign-ups)
+CREATE POLICY "Allow public inserts" ON subscribers
+  FOR INSERT
+  TO public
+  WITH CHECK (true);
 
--- Indexes for performance
-CREATE INDEX idx_threads_category ON threads(category_id);
-CREATE INDEX idx_threads_author ON threads(author_id);
-CREATE INDEX idx_threads_last_activity ON threads(last_activity_at DESC);
-CREATE INDEX idx_posts_thread ON posts(thread_id);
-CREATE INDEX idx_posts_author ON posts(author_id);
-
--- Row Level Security (RLS) Policies
-
--- Enable RLS
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE threads ENABLE ROW LEVEL SECURITY;
-ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
-
--- Profiles: Anyone can read, users can update their own
-CREATE POLICY "Public profiles are viewable by everyone"
-  ON profiles FOR SELECT
+-- Create policy to allow reads (for admin panel, optional)
+CREATE POLICY "Allow public reads" ON subscribers
+  FOR SELECT
+  TO public
   USING (true);
-
-CREATE POLICY "Users can update own profile"
-  ON profiles FOR UPDATE
-  USING (auth.uid() = id);
-
--- Categories: Anyone can read
-CREATE POLICY "Categories are viewable by everyone"
-  ON categories FOR SELECT
-  USING (true);
-
--- Threads: Anyone can read, authenticated users can create
-CREATE POLICY "Threads are viewable by everyone"
-  ON threads FOR SELECT
-  USING (true);
-
-CREATE POLICY "Authenticated users can create threads"
-  ON threads FOR INSERT
-  WITH CHECK (auth.role() = 'authenticated');
-
-CREATE POLICY "Users can update own threads"
-  ON threads FOR UPDATE
-  USING (auth.uid() = author_id);
-
-CREATE POLICY "Users can delete own threads"
-  ON threads FOR DELETE
-  USING (auth.uid() = author_id);
-
--- Posts: Anyone can read, authenticated users can create
-CREATE POLICY "Posts are viewable by everyone"
-  ON posts FOR SELECT
-  USING (true);
-
-CREATE POLICY "Authenticated users can create posts"
-  ON posts FOR INSERT
-  WITH CHECK (auth.role() = 'authenticated');
-
-CREATE POLICY "Users can update own posts"
-  ON posts FOR UPDATE
-  USING (auth.uid() = author_id);
-
-CREATE POLICY "Users can delete own posts"
-  ON posts FOR DELETE
-  USING (auth.uid() = author_id);
-
--- Functions to update counts
-
--- Function to update thread counts
-CREATE OR REPLACE FUNCTION update_thread_counts()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF TG_OP = 'INSERT' THEN
-    -- Update category counts
-    UPDATE categories
-    SET thread_count = thread_count + 1
-    WHERE id = NEW.category_id;
-    
-    -- Update user thread count
-    UPDATE profiles
-    SET thread_count = thread_count + 1
-    WHERE id = NEW.author_id;
-  ELSIF TG_OP = 'DELETE' THEN
-    UPDATE categories
-    SET thread_count = thread_count - 1
-    WHERE id = OLD.category_id;
-    
-    UPDATE profiles
-    SET thread_count = thread_count - 1
-    WHERE id = OLD.author_id;
-  END IF;
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- Function to update post counts
-CREATE OR REPLACE FUNCTION update_post_counts()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF TG_OP = 'INSERT' THEN
-    -- Update thread reply count and last activity
-    UPDATE threads
-    SET 
-      reply_count = reply_count + 1,
-      last_activity_at = NEW.created_at
-    WHERE id = NEW.thread_id;
-    
-    -- Update category post count
-    UPDATE categories
-    SET post_count = post_count + 1
-    WHERE id = (SELECT category_id FROM threads WHERE id = NEW.thread_id);
-    
-    -- Update user post count
-    UPDATE profiles
-    SET post_count = post_count + 1
-    WHERE id = NEW.author_id;
-  ELSIF TG_OP = 'DELETE' THEN
-    UPDATE threads
-    SET reply_count = reply_count - 1
-    WHERE id = OLD.thread_id;
-    
-    UPDATE categories
-    SET post_count = post_count - 1
-    WHERE id = (SELECT category_id FROM threads WHERE id = OLD.thread_id);
-    
-    UPDATE profiles
-    SET post_count = post_count - 1
-    WHERE id = OLD.author_id;
-  END IF;
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- Triggers
-CREATE TRIGGER on_thread_created
-  AFTER INSERT OR DELETE ON threads
-  FOR EACH ROW
-  EXECUTE FUNCTION update_thread_counts();
-
-CREATE TRIGGER on_post_created
-  AFTER INSERT OR DELETE ON posts
-  FOR EACH ROW
-  EXECUTE FUNCTION update_post_counts();
-
--- Insert default categories
-INSERT INTO categories (name, slug, description, icon, color, display_order) VALUES
-  ('Technique & Skills', 'technique', 'Discuss shots, footwork, grips, and improve your game', '🏸', 'bg-blue-500', 1),
-  ('Equipment Reviews', 'equipment', 'Rackets, shoes, strings, and gear recommendations', '🎾', 'bg-green-500', 2),
-  ('Training & Fitness', 'training', 'Workout routines, drills, and conditioning tips', '💪', 'bg-orange-500', 3),
-  ('Tournaments & Events', 'tournaments', 'Find players, organize games, tournament discussion', '🏆', 'bg-purple-500', 4),
-  ('Professional Circuit', 'pro-circuit', 'BWF tournaments, player news, match discussions', '⭐', 'bg-red-500', 5),
-  ('Beginners Corner', 'beginners', 'New to badminton? Start here with basic questions', '🌱', 'bg-cyan-500', 6);
